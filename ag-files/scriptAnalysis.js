@@ -23,21 +23,19 @@ function getScript(blockSpec, spriteIndex) {
 }
 
 function getAllScripts(blockSpec, spriteIndex) {
-   // TODO: Consider expanding to grab from additional sprites
-   // Try to get a sprite's scripts
-   // Throw exception if none exist.
-    spriteIndex = spriteIndex || 0;
-    if (spriteIndex === undefined) {
-        spriteIndex = 0;
-    }
+    // TODO: Consider expanding to grab from additional sprites
+    // Try to get a sprite's scripts
+    // Throw exception if none exist.
+    spriteIndex = spriteIndex === undefined ? 0 : spriteIndex;
+
     var scripts = getScripts(spriteIndex);
-   // If no scripts, throw an exception.
+    // If no scripts, throw an exception.
     if (scripts.length === 0) {
         throw "Block/script not found."
     }
 
-   // Try to return the first block matching 'blockSpec'.
-   // Throw exception if none exist/
+    // Try to return the first block matching 'blockSpec'.
+    // Throw exception if none exist/
     var validScripts = scripts.filter(function (morph) {
         // if (morph.selector) {
         //    // TODO: consider adding selector type check (morph.selector === "evaluateCustomBlock")
@@ -201,6 +199,7 @@ function reporterHasNoInputs(block) {
  * ]
  */
 function JSONblock(block) {
+    // TODO: Switch to `instanceof` instead of checking __proto__
     if ((block === undefined) || (block === null)) {
         throw "block is undefined";
     }
@@ -312,6 +311,7 @@ function JSONcustomBlock(block) {
  * the custom block's body.
  */
 function getCustomBody(blockSpec, spriteIndex) {
+    // TODO: Why is there here? It's not used? Fix or add comment.
     if (spriteIndex === undefined) {
         spriteIndex = 0;
     }
@@ -558,8 +558,10 @@ function customBlockContains(customBlockSpec, blockSpec, argArray, spriteIndex, 
  *
  * The following 8 blocks are considered C-shaped:
  *  -repeat, repeat until, warp, forever, for loop, if, if else, for each
+ *  TODO: Add why we restricted to these blocks or add note to expand list.
  */
 function CBlockContains(block1Spec, block2Spec, script, argArray1, argArray2, softMatch) {
+    // TODO: Fix this condition
     if (Object.prototype.toString.call(script) !== '[object Array]') {
         return false;
     }
@@ -573,6 +575,8 @@ function CBlockContains(block1Spec, block2Spec, script, argArray1, argArray2, so
         softMatch = false;
     }
     var morph1, type1, CblockSpecs;
+    // TODO: Replace this with one list.
+    // TODO: Write a function to find with inputs.
     CblockSpecs = ["repeat %n %c", "warp %c", "forever %c", "for %upvar = %n to %n %cs"];
     CblockSpecs = CblockSpecs.concat(["repeat until %b %c", "if %b %c", "if %b %c else %c"]);
     CblockSpecs = CblockSpecs.concat(["for each %upvar of %l %cs"]);

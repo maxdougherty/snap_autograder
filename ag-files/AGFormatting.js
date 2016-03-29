@@ -348,8 +348,13 @@ function createInitialHelp() {
 
     document.getElementById("initial-help").appendChild(hamburger_help);
     document.getElementById("initial-help").appendChild(hamburger_help_arrow);
-    $("#full-screen-arrow").clone().appendTo("#initial-help");
-    $("#full-screen-help").clone().appendTo("#initial-help");
+    
+    // FOR NOW: Only show full screen if in edX.
+    // Note: iframe solution probably applies to embedded LTI apps
+    if (isEDX) {
+        $("#full-screen-arrow").clone().appendTo("#initial-help");
+        $("#full-screen-help").clone().appendTo("#initial-help");
+    }
 
     var arrow = document.getElementById("ag-button-arrow"), 
         arrow_clone = arrow.cloneNode(true);
@@ -362,7 +367,7 @@ function createInitialHelp() {
     document.getElementById("initial-help").appendChild(arrow_clone);
     document.getElementById("initial-help").appendChild(help_clone);
     
-    setInitialHelpDisplay(true)
+    setInitialHelpDisplay(true);
 }
 
 function previousFeedbackButton() {
@@ -396,6 +401,7 @@ function initializeSnapAdditions(snapWorld, taskID) {
         previousFeedbackButton();
         prevFeedbackButton = true;
     }
+    
     if (isEDX) {
         current_iframe.parentNode.parentNode.parentNode.style.width = "100%";
     }
@@ -569,10 +575,12 @@ function initializeSnapAdditions(snapWorld, taskID) {
         button_style = window.getComputedStyle(button);
         button_right = button_style.getPropertyValue('right');
 
+        var outputLog;
         if (prev_log) {
-            var outputLog = prev_log;
+            outputLog = prev_log;
         } else {
-           var outputLog = AGStart(snapWorld, taskID);
+            // Not sure if this is the best place...
+            outputLog = AGStart(snapWorld, taskID);
         }
 
         // for some reason, the for loop in populateFeedback doesn't increment
@@ -588,15 +596,14 @@ function initializeSnapAdditions(snapWorld, taskID) {
         moveAutogradingBar();
 
         var tip_tests = document.getElementsByClassName("data");
-        for(var i=0; i < tip_tests.length; i++){
+        for(var i = 0; i < tip_tests.length; i++){
             tip_tests[i].style.maxWidth = String(Number(document.getElementsByClassName("inner-titles")[0].offsetWidth) - 50) + "px";
         }
 
+        // TODO: These can be extracted into their own file.
         StageHandleMorph.prototype.originalFixLayout = StageHandleMorph.prototype.fixLayout;
         StageHandleMorph.prototype.fixLayout = function() {
             this.originalFixLayout();
-            // console.log(this.target.right());
-            // console.log(this.target.width());
             if (this.target.width() > 225) {
                 if (this.target.width() > 390) {
                     $('#autograding_bar').css({
@@ -617,6 +624,15 @@ function initializeSnapAdditions(snapWorld, taskID) {
         if (starter_xml) {
             ide.openProjectString(starter_xml);
             sessionStorage.removeItem(taskID + "starter_file");
+        } else if (starter_path) {
+            ide.showMessage('Loading the starter file.');
+            $.get(
+                starter_path,
+                function(data) {
+                    ide.openProjectString(data);
+                }, 
+                "text"
+            );
         }
     }, 1500);
 }
@@ -687,12 +703,10 @@ function moveHelp() {
     });
 }
 
-
 function appendElement(elem, text, elemClass, selector) {
     var data = document.createElement(elem);
     if (text !== null) {
-        var text = document.createTextNode(text);
-        data.appendChild(text);
+        data.innerHTML = text;
     }
     if (Array.isArray(elemClass)) {
         DOMTokenList.prototype.add.apply(data.classList, elemClass);
@@ -731,13 +745,24 @@ function createCollapsibleCorrectSection(selector) {
     correct_tip.appendChild(correct_collapse);
 }
 
+function createCorrectIncorrectGrouping(sectName) {
+    var text_content = {
+        correct: 'Nice work! Here are passing tests:',
+        incorrect: 'Here are some test cases you should review:'
+    },
+    div = $('<div>')
+        .html(text_content[sectName])
+        .attr('id', sectName + '-section')
+        .css({display: 'none'});
+            
+    $('#ag-results').append(div)
+}
+
 /*
-    TODO: Update this to use jQuery, and maybe _ templates
+    TODO: Update this to use jQuery, and maybe _.template() ?
     http://underscorejs.org/#template
-    * This needs to be broken into at least a few functions
+    * This should be broken into at least a few functions
     * Cache all document.get*() calls which are used more than one
-    * Cleanup all the x["y"] calls to be x.y
-    * Remove add extra String() coercions, and document any that are necessary
 */
 function populateFeedback(feedbackLog, allFeedback, chunknum, tipnum) {
     // TODO: Declare move variables up here:
@@ -752,7 +777,7 @@ function populateFeedback(feedbackLog, allFeedback, chunknum, tipnum) {
         } else {
             toggleButton.classList.add("isOff");
             allFeedback = false;
-            toggleButton.innerHTML = "See Correct Tests";
+            toggleButton.innerHTML = "Show Correct Tests";
         }
         populateFeedback(feedbackLog, allFeedback);
         setTimeout(function() {
@@ -761,8 +786,8 @@ function populateFeedback(feedbackLog, allFeedback, chunknum, tipnum) {
     }
 
     var comment = document.getElementById("comment");
-
     comment.innerHTML = "";
+    
     while (comment.nextSibling) {
         document.getElementById("ag-results").removeChild(comment.nextSibling);
     }
@@ -771,89 +796,60 @@ function populateFeedback(feedbackLog, allFeedback, chunknum, tipnum) {
     var chunks = log.chunk_list;
     var linebreak = document.createElement("br");
     var numtips = 0;
-    var plural = "";
     var chunkHasCorrectTip = false;
     var tipHasCorrectTest = false;
 
+    var tipsDiv = document.getElementById("numtips");
 
-    onclick_menu.style.right = menu_right;
-    button.style.right = button_right;
-    document.getElementById("numtips").innerHTML = String(numtips) + " tip" + plural;
-    var tipwidth = document.getElementById("numtips").offsetWidth;
-
-    onclick_menu.style.right = String(Number(menu_right.slice(0, menu_right.length - 2)) + tipwidth - 2) + "px";
-    
-    button.style.right = String(Number(button_right.slice(0, button_right.length - 2)) + tipwidth - 2) + "px";
-
-    button.style.borderRadius = "0px";
-
-    var correct_section = document.createElement("div");
-    var incorrect_section = document.createElement("div");
-    var correct_section_text = document.createTextNode("Here is what you did well!");
-    var incorrect_section_text = document.createTextNode("Here is what you may want to look at again!");
-    correct_section.appendChild(correct_section_text);
-    incorrect_section.appendChild(incorrect_section_text);
-    correct_section.id = "correct-section";
-    incorrect_section.id = "incorrect-section";
-
-    document.getElementById("ag-results").appendChild(correct_section);
-    document.getElementById("ag-results").appendChild(incorrect_section);
-
-    document.getElementById("correct-section").style.display = "none";
-    document.getElementById("incorrect-section").style.display = "none";
+    [ 'correct', 'incorrect' ].forEach(createCorrectIncorrectGrouping);
 
     // TODO: What is this doing? It seems redundant.
     var chunknum = typeof chunknum !== 'undefined' ? chunknum : undefined;
     var tipnum = typeof tipnum !== 'undefined' ? tipnum : undefined;
     
-    if (!showPoints) {
-        showPoints = false;
-    }
-
+    // TODO: Break up these loops and document.
     for (i = 0; i < chunks.length; i++) {
         var chunk = chunks[i];
 
-        var chunkPlural = "";
         var chunkPoints = "";
         if (showPoints) {
-            if (chunk.totalPoints !== 1) {
-                chunkPlural = "s";
-            }
-            chunkPoints = " (" + chunk["totalPoints"] + " possible point" + chunkPlural + ")";
+            chunkPoints = " ({0} possible {1}) ".format(
+                chunk.totalPoints, pluralize('point', chunk.totalPoints));
         }
 
         var tips = chunk.tip_list;
         var header = document.createElement("p");
-        header.innerHTML = String(chunk["chunk_title"]) + chunkPoints + '<br><br>';
+        header.innerHTML = chunk.chunk_title + chunkPoints + '<br><br>';
         
-        header.classList.add("chunk-header", "chunk" + String(i));
+        header.classList.add("chunk-header", "chunk" + i);
         
         var correct_chunk = header.cloneNode(true);
-        correct_chunk.classList.add("correct-chunk" + String(i));
+        correct_chunk.classList.add("correct-chunk" + i);
         
         if (chunk.allCorrect) {
             document.getElementById("correct-section").style.display = "block";
             document.getElementById("correct-section").appendChild(correct_chunk);
         } else {
             var incorrect_chunk = header.cloneNode(true);
-            incorrect_chunk.classList.add("incorrect-chunk" + String(i));
+            incorrect_chunk.classList.add("incorrect-chunk" + i);
             document.getElementById("incorrect-section").style.display = "block";
             document.getElementById("incorrect-section").appendChild(incorrect_chunk);
         }
 
         var currRank = 1;
         tipLoop:
+        // TODO: Document this
 
         for (x = 0; x < tips.length; x++) {
             var tip = tips[x];
             var allFeedback = typeof allFeedback !== 'undefined' ? allFeedback : false;
             var div = document.createElement("div");
             var label_class = "incorrectans";
-            var current_chunk = document.getElementsByClassName("incorrect-chunk"+String(i))[0];
+            var current_chunk = document.getElementsByClassName("incorrect-chunk" + i)[0];
             if (tip.allCorrect) {
                 document.getElementById("correct-section").style.display = "block";
                 document.getElementById("correct-section").appendChild(correct_chunk);
-                current_chunk = document.getElementsByClassName("correct-chunk"+String(i))[0];
+                current_chunk = document.getElementsByClassName("correct-chunk" + i)[0];
                 label_class = "correctans";
                 var suggestion = tip.complement;
             } else {
@@ -864,12 +860,12 @@ function populateFeedback(feedbackLog, allFeedback, chunknum, tipnum) {
             var tipPoints = "";
 
             // TODO: Clean this up
-            div.innerHTML = '<input class="details" id="expander' + i + x + '" type="checkbox" ><label class="' + label_class + '" for="expander' + i + x + '">' + tipPoints + String(suggestion) + '</label><div id="table-wrapper' + i + x + '">';
+            div.innerHTML = '<input class="details" id="expander' + i + x + '" type="checkbox" ><label class="' + label_class + '" for="expander' + i + x + '">' + tipPoints + suggestion + '</label><div id="table-wrapper' + i + x + '">';
 
             current_chunk.appendChild(div);
             var details = document.getElementById("table-wrapper" + i + x);
             details.previousSibling.click();
-            var allTests = tip["test_list"];
+            var allTests = tip.test_list;
             appendElement(
                 "p",
                 "",
@@ -880,13 +876,9 @@ function populateFeedback(feedbackLog, allFeedback, chunknum, tipnum) {
             for (j = 0; j < allTests.length; j++) {
                 var newRow = document.createElement("tr");
                 var thisTest = allTests[j];
-                var testPlural = "";
                 var testPoints = "";
                 if (showPoints) {
-                    if (thisTest.points !== 1) {
-                        testPlural = "s";
-                    }
-                    testPoints = "(" + thisTest.points + " point" + testPlural + ") ";
+                    testPoints = "({0}) ".format(pluralizeWithNum('point', thisTest.points));
                 }
                 
                 if (thisTest.testClass !== "r") {
@@ -962,7 +954,7 @@ function populateFeedback(feedbackLog, allFeedback, chunknum, tipnum) {
                             document.getElementsByClassName("observations" + i + x)[0]
                         );
                     }
-                    if (thisTest["correct"] === true && tip["allCorrect"] === false) {
+                    if (thisTest.correct === true && tip.allCorrect === false) {
                         tipHasCorrectTest = true;
                         if (!document.getElementById("correct-tip" + i + x)) {
                             // TODO: This?
@@ -980,6 +972,7 @@ function populateFeedback(feedbackLog, allFeedback, chunknum, tipnum) {
                     string_reporter = document.createElement("div")
                     string_reporter.classList.add("data", "assertion");
                     
+                    // TODO: Try extracting this out.
                     if (thisTest.correct) {
                         if ((allFeedback) || tip.allCorrect) {
                             appendElement(
@@ -988,21 +981,30 @@ function populateFeedback(feedbackLog, allFeedback, chunknum, tipnum) {
                                 "data",
                                 document.getElementsByClassName("tests-section" + i + x)[0]
                             );
+                            // TODO Clean these strings up.
+                            var input = thisTest.input;
+                            if (input instanceof List || input instanceof Array) {
+                                input = arrayFormattedString(input);
+                            }
                             
                             htmlString = [
                                 '<p class="data assertion">',
                                 testPoints + thisTest.feedback,
-                                ' The <p class="data assertion bold">input: ',
-                                thisTest.input,
-                                '</p>'
+                                ' The input: <code class="data assertion">',
+                                input,
+                                '</code>'
                             ].join('');
-                            /*if (typeof thisTest.expOut === "function") {
-                            //if (thisTest.expOut.constructor !== Function) {
+                            if (thisTest.expOut.constructor !== Function) {
+                                var expOut = thisTest.expOut;
+                                if (expOut instanceof List || expOut instanceof Array) {
+                                    expOut = arrayFormattedString(expOut);
+                                }
+                                
                                 htmlString += [
-                                    '<p class="data assertion">, returned the </p>',
-                                    '<p class="data assertion bold">expected value: ',
-                                    thisTest.expOut,
-                                    '</p>'
+                                    '<p class="data assertion">, returned the',
+                                    ' expected value: <code class="data assertion">',
+                                    expOut,
+                                    '</code></p>'
                                 ].join('');
                             } else {
                                 htmlString += '<p class="data assertion">passed the tests.</p>';
@@ -1030,21 +1032,30 @@ function populateFeedback(feedbackLog, allFeedback, chunknum, tipnum) {
 
                         string_reporter.classList.add("data", "assertion");
                         // TODO Clean these strings up.
+                        var input = thisTest.input;
+                        if (input instanceof List || input instanceof Array) {
+                            input = arrayFormattedString(input);
+                        }
+                        
                         htmlString = [
                             '<p class="data assertion">',
                             testPoints + thisTest.feedback,
-                            ' The <p class="data assertion bold">input: ',
-                            thisTest.input,
-                            '</p> '
+                            'The input: <code>',
+                            input,
+                            '</code></p> '
                         ].join('');
                         
                         // Don't show "expected output" if the output check is
                         // a custon JS function (where no output type is known.)
                         if (thisTest.expOut && thisTest.expOut.constructor !== Function) {
+                            var expOut = thisTest.expOut;
+                            if (expOut instanceof List || expOut instanceof Array) {
+                                expOut = arrayFormattedString(expOut);
+                            }
                             htmlString += [
-                                '<p class="data assertion">did <em>not</em> return the </p>',
-                                '<p class="data assertion bold">expected value: ',
-                                thisTest.expOut
+                                '<p class="data assertion">did <em>not</em> return the',
+                                ' expected value: ',
+                                '<code>', expOut, '</code></p>'
                             ].join('');
                         }
                         if (thisTest.output === null) {
@@ -1054,7 +1065,11 @@ function populateFeedback(feedbackLog, allFeedback, chunknum, tipnum) {
                             ].join('');
                             htmlString += '<p class="data assertion"> Instead it returned no output.</p>';
                         } else {
-                            htmlString += '<p class="data assertion bold">output: ' + thisTest.output + '</p>';
+                            var output = thisTest.output;
+                            if (output instanceof List || output instanceof Array) {
+                                output = arrayFormattedString(output);
+                            }
+                            htmlString += '<p class="data assertion">output: <code>' + output + '</code></p>';
                         }
                         string_reporter.innerHTML = htmlString;
                         document.getElementsByClassName(
@@ -1086,7 +1101,9 @@ function populateFeedback(feedbackLog, allFeedback, chunknum, tipnum) {
     }
     correct_width = document.getElementById("correct-section").offsetWidth;
     incorrect_width = document.getElementById("incorrect-section").offsetWidth;
-    popup_width = document.getElementById("ag-results").offsetWidth - 60; // TODO: make the subtracted value work for any padding values
+    popup_width = document.getElementById("ag-results").offsetWidth - 60;
+    // TODO: make the subtracted value work for any padding values
+    
     if (document.getElementsByClassName("incorrectans")[0] !== undefined) {
         document.getElementsByClassName("incorrectans")[0].click();
     }
@@ -1115,46 +1132,42 @@ function populateFeedback(feedbackLog, allFeedback, chunknum, tipnum) {
         }
     }
 
-    if (numtips !== 1) {
-        plural = "s";
-    }
-
-    var problemPlural = "";
-    var problemPoints = "";
+    var problemPoints = '';
     if (showPoints) {
-        if (log["totalPoints"] !== 1) {
-            problemPlural = "s";
-        } 
-        log["totalPoints"] = Math.round(log["totalPoints"]);
-        problemPoints = " (" + log["totalPoints"] + " possible point" + problemPlural + ") ";
+        problemPoints = " ({0} possible {1}) ".format(
+            points, pluralize('point', Math.round(log.totalPoints))
+        );
     }
 
-    document.getElementById("comment").innerHTML = "We have " + String(numtips) + " tip" + plural + " for you!" + problemPoints;
+    var tipText;
+    if (numtips === 0) {
+        tipText = 'Awesome work! You passed all tests.';
+    } else {
+        tipText = "We have {0} for you! ".format(
+            pluralizeWithNum('tip', numtips)
+        ) + problemPoints;
+    }
+    $("#comment").html(tipText);
 
     onclick_menu.style.right = menu_right;
     button.style.right = button_right;
-    document.getElementById("numtips").innerHTML = String(numtips) + " tip" + plural;
-    var tipwidth = document.getElementById("numtips").offsetWidth;
+    tipsDiv.innerHTML = pluralizeWithNum('tip', numtips);
+    var tipwidth = tipsDiv.offsetWidth;
 
-    // TODO: Fix this or document why corercion is needed.
-    onclick_menu.style.right = String(Number(menu_right.slice(0, menu_right.length - 2)) + tipwidth - 2) + "px";
-    
-    button.style.right = String(Number(button_right.slice(0, button_right.length - 2)) + tipwidth - 2) + "px";
-
+    // TODO: Make this a function.
+    onclick_menu.style.right = +(menu_right.slice(0, menu_right.length - 2)) + tipwidth - 2 + "px";
+    button.style.right = +(button_right.slice(0, button_right.length - 2)) + tipwidth - 2 + "px";
     button.style.borderRadius = "0px";
 
     var toggleButton = document.getElementById("toggle-correct");
-    if (tipHasCorrectTest) {
-        toggleButton.style.display = "block";
-    } else {
-        toggleButton.style.display = "none";
-    }
+    toggleButton.style.display = tipHasCorrectTest ? 'block' : 'none';
 
     if (!isEDX) {
-        var noCreditWarning = document.createElement("p");
-        var noCreditText = document.createTextNode("Please note you won't receive a score from edX for attempting this problem.");
-        noCreditWarning.appendChild(noCreditText);
-        document.getElementById("comment").appendChild(noCreditWarning);
+        // No Credit Warning Commented out because it doesn't apply to bCourses.
+        // var noCreditWarning = document.createElement("p");
+        // var noCreditText = document.createTextNode("Please note you won't receive a score from edX for attempting this problem.");
+        // noCreditWarning.appendChild(noCreditText);
+        // document.getElementById("comment").appendChild(noCreditWarning);
         openResults();
     }
 }

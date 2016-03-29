@@ -1,3 +1,7 @@
+// TODO: Refactor and document the need for iframe checking.
+// If should probably be in AG_EDX and be a function to call.
+// id_problem can be cached in some variable.
+
 var current_iframe = window.frameElement;
 var num_iframes = parent.document.getElementsByClassName('problem-header').length;
 var iframes = parent.document.getElementsByTagName("iframe");
@@ -13,7 +17,7 @@ var showPoints = false;
 var showPrevFeedback = false;
 
 function isEDXurl() {
-    return window.location.host.indexOf('edx.org') !== -1;//|| window.location.host.indexOf('cloudfront.net') !== -1;
+    return window.location.host.indexOf('edx.org') !== -1; //|| window.location.host.indexOf('cloudfront.net') !== -1;
 }
 
 /* Removes the previously saved AG_state. Runs the tests in
@@ -29,7 +33,8 @@ function runAGTest(snapWorld, taskID, outputLog) {
     
     // TODO: Cleanup and document this API
     var test_log = AGTest(outputLog);
-    if(!test_log.runSnapTests()) {
+    var TEST = test_log.runSnapTests();
+    if (!TEST) {
         test_log.scoreLog();
     }
 }
@@ -60,6 +65,7 @@ function AGStart(snapWorld, taskID) {
     if (isSameSnapXML(c_prev_xml, curr_xml)) {
         // Restore the AG status bar to a graded state
         var outputLog = JSON.parse(sessionStorage.getItem(taskID + "_c_test_log"));
+        outputLog.savedXML = curr_xml;
         outputLog.snapWorld = snapWorld;
         if (outputLog.allCorrect === true) {
             AG_bar_graded(outputLog);
@@ -72,6 +78,7 @@ function AGStart(snapWorld, taskID) {
     if (isSameSnapXML(prev_xml, curr_xml)) {
         // Restore the AG status bar to a graded state
         var outputLog = JSON.parse(sessionStorage.getItem(taskID + "_test_log"));
+        outputLog.savedXML = curr_xml;
         outputLog.snapWorld = snapWorld;
         AG_bar_semigraded(outputLog);
         return outputLog; 
@@ -119,6 +126,7 @@ function AGUpdate(snapWorld, taskID) {
         AG_bar_nograde();
         return
     }
+    
     // If current XML is different from prev_xml
     if (c_prev_xml && isSameSnapXML(c_prev_xml, curr_xml)) {               
        // Restore the AG status bar to a graded state
@@ -131,6 +139,7 @@ function AGUpdate(snapWorld, taskID) {
 
        // Retrieve the correct test log from sessionStorage
         outputLog = JSON.parse(c_prev_log);
+        outputLog.savedXML = curr_xml;
         outputLog.snapWorld = snapWorld;
         if (outputLog.allCorrect === true) {
             AG_bar_graded(outputLog);
@@ -142,6 +151,7 @@ function AGUpdate(snapWorld, taskID) {
        // Restore the AG status bar to a graded state
         console.log('AGUpdate: Thinks this is just the "last" XML.');
         outputLog = JSON.parse(prev_log);
+        outputLog.savedXML = curr_xml;
         outputLog.snapWorld = snapWorld;
         AG_bar_semigraded(outputLog);
     } else {
@@ -169,14 +179,18 @@ function AGFinish(outputLog) {
 
     if (!graded) {
         AG_bar_nograde();
-        return
+        return;
     }
+    
     // Verify correctness
     if (outputLog.allCorrect) {
         // Save the correct XML string into sessionStorage
         AG_bar_graded(outputLog);
         outputLog.saveSnapXML(outputLog.taskID + "_c_test_state");
-    } else if ((outputLog.pScore > 0) && ((c_prev_log && outputLog.pScore >= c_prev_log.pScore) || (!c_prev_log))) {
+        // TODO: Refactor this conditional. 
+    } else if (outputLog.pScore > 0 && 
+        ((c_prev_log && outputLog.pScore >= c_prev_log.pScore)
+        || (!c_prev_log))) {
         // Update AG_status_bar to 'graded, but incorrect state
     } else {
         AG_bar_semigraded(outputLog);
@@ -190,7 +204,11 @@ function AGFinish(outputLog) {
     console.log(outputLog);
     if (isEDXurl()) {
         edX_check_button.click();
-    } 
+    }
+    if (submitAutograderResults) {
+        console.log('SUBMITTING AG RESULTS');
+        submitAutograderResults(outputLog);
+    }
     if (!isEDXurl()) {
         populateFeedback(outputLog, false)
         openResults();
@@ -245,11 +263,13 @@ function revertToBestState(snapWorld, taskID) {
     sessionStorage.setItem(taskID + "_test_log", c_prev_log);
 
     var prev_log = JSON.parse(sessionStorage.getItem(taskID + "_test_log"));
-    prev_log.snapWorld = snapWorld;
+    // prev_log.savedXML = c_prev_xml;
+    // prev_log.snapWorld = snapWorld;
     AG_bar_graded(prev_log);
     if (showFeedback) {
         populateFeedback(prev_log);
     }
+    // TODO: Is this line necessary?
     prev_log.numAttempts = numAttempts;
     ide.openProjectString(c_prev_xml);
     grayOutButtons(snapWorld, taskID);
@@ -259,7 +279,8 @@ function revertToLastState(snapWorld, taskID) {
     var ide = snapWorld.children[0];
     var prev_xml = sessionStorage.getItem(taskID + "_test_state");
     var prev_log = JSON.parse(sessionStorage.getItem(taskID + "_test_log"));
-    prev_log.snapWorld = snapWorld;
+    // prev_log.savedXML = prev_xml;
+    // prev_log.snapWorld = snapWorld;
     if (prev_log['allCorrect']) {
         AG_bar_graded(prev_log);
     } else {
@@ -280,7 +301,6 @@ function revertToLastState(snapWorld, taskID) {
  * @return {Boolean} Equivalence of prev_xml and curr_xml, false if
  * either are strings are undefined.
  * Currently only works for one sprite with scripts
- * TODO: Extend to all script groups [DONE]
  * TODO: Improve XML scrubbing (Consider the following)
  *  - If correct solution (scripts) is subset of other [DONE]
  *  - Optional tags for variables, sprite position  
@@ -388,22 +408,5 @@ function setNumAttempts(taskID) {
     } else {
         return 0;
     }
-}
-
-// TODO: MOVE THIS TO A MORE ISOLATED LOCATION
-IDE_Morph.prototype.originalOpenProject = IDE_Morph.prototype.openProjectString;
-IDE_Morph.prototype.openProjectString = function (name) {
-    this.originalOpenProject(name);
-    setTimeout(function() {
-        AGUpdate(world, id);
-    }, 1000);
-}
-
-IDE_Morph.prototype.originalCloudOpenProject = IDE_Morph.prototype.openCloudDataString;
-IDE_Morph.prototype.openCloudDataString = function (name) {
-    this.originalCloudOpenProject(name);
-    setTimeout(function() {
-        AGUpdate(world, id);
-    }, 1000);
 }
 

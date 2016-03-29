@@ -131,27 +131,38 @@ FeedbackLog.prototype.tipOf = function(test) {
 FeedbackLog.prototype.saveLog = function() {
     // Save current state as 'last attempt'
     var log_string = this.toString();
-    //console.log(log_string);
+
     try {
         sessionStorage.setItem(this.taskID + '_test_log', log_string);
-        // Find previous 'best attempt', compare with current, if better, overwrite
+    } catch (e) {
+        console.log('Cannot Set Item in Session Storage');
+    }
+    
+    try {
+        sessionStorage.setItem(this.taskID + '_test_log', log_string);
+        // Find previous 'best attempt', compare w/current, if better, overwrite
         // Note: Holy Jesus. This predicate is rediculous. Brain hurts...
         var c_prev_log = JSON.parse(sessionStorage.getItem(this.taskID + "_c_test_log"));
         if (this.allCorrect || 
             ((this.pScore > 0) && 
-                ((c_prev_log && (this.pScore >= c_prev_log.pScore)) || (!c_prev_log)))) {
+                ((c_prev_log && (this.pScore >= c_prev_log.pScore)) || !c_prev_log)
+            )
+        ) {
             // Store the correct log in sessionStorage
             sessionStorage.setItem(this.taskID + "_c_test_log", log_string);
         }
     } catch (e) {
         console.log(e);
     }
-    
 }
 
 FeedbackLog.prototype.saveSnapXML = function(store_key) {
     if (this.snapWorld && store_key) {
-        sessionStorage.setItem(store_key, this.stringifySnapXML());
+        try {
+            sessionStorage.setItem(store_key, this.stringifySnapXML());
+        } catch (e) {
+            console.log('Cannot Set Item in Session Storage');
+        }
     }
 };
 
@@ -245,9 +256,10 @@ FeedbackLog.prototype.startSnapTest = function(test) {
         }
         // Launch timeout to handle Snap errors and infinitely looping scripts
         var timeout_id = setTimeout(function() {
+            // TODO: This is erroring for some reason....
             var stage = fb_log.snapWorld.children[0].stage;
             if (test.proc.errorFlag) {
-                test.feedback = "Snap Error.";
+                test.feedback = "Uh oh! A Snap Error occurred.";
             } else {
                 test.feedback = "Test Timeout Occurred.";
             }
@@ -266,7 +278,7 @@ FeedbackLog.prototype.startSnapTest = function(test) {
         }, timeout);
         this.currentTimeout = timeout_id;
         return this;
-    } catch(e) {
+    } catch (e) {
         // If an error is throw, fill out the test info, and find the next test
         test.feedback = e;
         test.correct = false;
@@ -280,36 +292,34 @@ FeedbackLog.prototype.startSnapTest = function(test) {
 
 FeedbackLog.prototype.finishSnapTest = function(test, output) {
     // Check that output is being returned
-    if (output == undefined) {
-        test.output = null;
+    if (output == undefined || output == null) {
+        test.output = '[NO OUTPUT]';
+    } else if (output === '') {
+        test.output = '[empty output]'
     } else {
         // If the output is a list, reformat it for comparision
-        /*if (output instanceof List) {
+        if (output instanceof List) {
             test.output = arrayFormattedString(
-                toNativeArray(output),
-                {
-                    newline: '<br>',
-                    indent: '&nbsp;&nbsp;'
-                }
+                toNativeArray(output)
             );
+            /*{
+                newline: output.length() < 25 ? '<br>' : '&nbsp;',
+                indent: '&nbsp;&nbsp;'
+            }*/
+
         } else {
             test.output = output.toString();
-        }*/
-
-        if (output instanceof List) {
-            test.output = output.asArray();
-        } else {
-            test.output = output;
         }
     }
     
-    try {
-        var myscript = getScript(test.blockSpec);
-        test.picture = myscript.returnResultBubble(output);
-    } catch (e) {
-        console.log('Error Generating Script Pic: ', e);
-        test.picture = null;
-    }
+    // try {
+    //     var myscript = getScript(test.blockSpec);
+    //     // FIXME -- this isn't working...
+    //     test.picture = myscript.returnResultBubble(output);
+    // } catch (e) {
+    //     console.log('Error Generating Script Pic: ', e);
+    //     test.picture = null;
+    // }
 
     var expOut = test.expOut;
     if (expOut instanceof Function) {
@@ -318,8 +328,7 @@ FeedbackLog.prototype.finishSnapTest = function(test, output) {
     } else {
         if (expOut instanceof Array) {
             // TODO: Switch this to toSnapList (or whatever I named that fn)
-            listify(expOut);
-            expOut = new List(expOut);
+            expOut = toSnapList(expOut);
         }
         test.correct = snapEquals(output, expOut);
     }
@@ -374,7 +383,7 @@ FeedbackLog.prototype.runNextTest = function(test) {
     // if it exists, launch it with a timeout
 };
 
-FeedbackLog.prototype.nextTest = function(test) {
+FeedbackLog.prototype.nextTest = function (test) {
     all_tests = this.allIOTests();
     var test_index = all_tests.indexOf(test);
     if ((all_tests.length - test_index) > 1) {
@@ -466,7 +475,7 @@ FeedbackLog.prototype.scoreLog = function() {
 
 /************** Formatting the Feedback Log *****************/
 
-// NOTE: May not longer be necessary
+// NOTE: May no longer be necessary
 FeedbackLog.prototype.toDict = function() {
     throw 'FeedbackLog.toDict: This function is DEPRICATED.'
     // body...
@@ -611,12 +620,8 @@ function AssertTest(statement, text, pos_fb, neg_fb, points) {
     this.text = text;
     this.pos_fb = pos_fb;
     this.neg_fb = neg_fb;
-    if (points !== undefined) {
-        this.points = points;
-    } else {
-        this.points = 1;
-    }
-    //this.points = points !== undefined ? points : 1 <<< FIXED ;
+    this.points = points !== undefined ? points : 1;
+    
     try {
         this.correct = statement();
         if (this.correct) {
@@ -745,6 +750,7 @@ function findBlockInPalette(blockSpec, workingWorld) {
     var thisWorld = workingWorld || world,
         palette = null,
         i = 0,
+        // TODO: extract this, make a 'constant'
         pList = ["motion", "variables", "looks", "sound", "pen", "control", "sensing", "operators"];
 
     for (var item of pList) {
@@ -810,6 +816,8 @@ function evalReporter(block, outputLog, testID) {
         stage.isThreadSafe,
         false,
         function() {
+            console.log('Completion callback');
+            console.log(proc);
             outputLog.finishTest(testID, readValue(proc));
         }
     );
@@ -821,6 +829,7 @@ function evalReporter(block, outputLog, testID) {
  * process on completion.
  */
 function readValue(proc) {
+    console.log('READ VALUE PROC: ', proc);
     return proc.homeContext.inputs[0];
 }
 
